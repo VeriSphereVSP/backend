@@ -228,23 +228,23 @@ GRANT CONNECT ON DATABASE verisphere TO verisphere_app;
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
-CREATE TABLE IF NOT EXISTS claims (
+CREATE TABLE IF NOT EXISTS claim (
   claim_id           BIGSERIAL PRIMARY KEY,
   claim_text         TEXT NOT NULL,
   content_hash       TEXT NOT NULL UNIQUE,
-  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_tms        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- OpenAI text-embedding-3-large => 3072 dims (adjust if you change model)
-CREATE TABLE IF NOT EXISTS claim_embeddings (
-  claim_id           BIGINT PRIMARY KEY REFERENCES claims(claim_id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS claim_embedding (
+  claim_id           BIGINT PRIMARY KEY REFERENCES claim(claim_id) ON DELETE CASCADE,
   embedding_model    TEXT NOT NULL,
   embedding          vector(3072) NOT NULL,
-  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_tms        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS claim_embeddings_ivfflat
-ON claim_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS claim_embedding_ivfflat
+ON claim_embedding USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 COMMIT;
 ```
