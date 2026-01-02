@@ -1,0 +1,11 @@
+Next optional upgrades
+
+pgvector index tuning (IVFFLAT vs HNSW)
+
+Provider/model migration safety (multiple embeddings per claim)
+
+Async embedding pipeline
+
+Semantic clustering / canonical-claim selection
+
+Cross-service dedupe integration (claims ↔ posts ↔ links)

@@ -1,0 +1,17 @@
+pyproject.toml
+app/__init__.py
+app/api.py
+app/config.py
+app/db.py
+app/hashing.py
+app/similarity.py
+app/embedding/base.py
+app/embedding/openai_provider.py
+app/embedding/provider.py
+app/embedding/stub_provider.py
+tests/test_hashing.py
+tests/test_similarity.py
+verisphere_semantic_dedupe.egg-info/PKG-INFO
+verisphere_semantic_dedupe.egg-info/SOURCES.txt
+verisphere_semantic_dedupe.egg-info/dependency_links.txt
+verisphere_semantic_dedupe.egg-info/top_level.txt

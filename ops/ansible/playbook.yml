@@ -1,0 +1,4 @@
+- hosts: verisphere
+  become: true
+  roles:
+    - docker
