@@ -165,3 +165,4 @@ vite.config.ts.timestamp-*
 # misc
 modules/
 objects/
+.venv-tests/

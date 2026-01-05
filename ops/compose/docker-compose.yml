@@ -1,6 +1,5 @@
 services:
   postgres:
-    # pgvector enabled Postgres (recommended for semantic search)
     image: pgvector/pgvector:pg16
     container_name: verisphere_postgres
     restart: unless-stopped
@@ -12,9 +11,7 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - verisphere_pgdata:/var/lib/postgresql/data
-      # init scripts run ONLY on first boot when data dir is empty
       - ../postgres/init:/docker-entrypoint-initdb.d:ro
-      # migrations mounted for Makefile-driven application
       - ../postgres/migrations:/migrations:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER} -d ${POSTGRES_DB}"]
@@ -40,5 +37,19 @@ services:
     ports:
       - "${SEMANTIC_DEDUPE_PORT:-8081}:8081"
 
+  claim-decompose:
+    build:
+      context: ../../services/claim_decompose
+    container_name: verisphere_claim_decompose
+    restart: unless-stopped
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DECOMP_MODEL: ${DECOMP_MODEL:-gpt-4o-mini}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PORT: 8090
+    ports:
+      - "${CLAIM_DECOMPOSE_PORT:-8090}:8090"
+
 volumes:
   verisphere_pgdata:
+
