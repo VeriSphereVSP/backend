@@ -14,7 +14,6 @@ docker-compose.override.yml
 postgres-data/
 pgdata/
 backups/
-*.sql
 *.sql.bak
 *.dump
 
@@ -163,3 +162,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
+# misc
+modules/
+objects/

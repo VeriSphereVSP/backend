@@ -1,0 +1,1 @@
+-- Keep init scripts minimal. Migrations handle roles/tables.

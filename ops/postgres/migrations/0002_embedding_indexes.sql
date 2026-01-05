@@ -1,0 +1,201 @@
+-- 0002_embedding_indexes.sql
+--
+-- PURPOSE
+--   Document (in a non-executable, fully commented form) the embedding index options
+--   for VeriSphere semantic duplication detection.
+--
+--   This file is intentionally a *documentation-only* migration:
+--     - It should NOT create any indexes today.
+--     - It should NOT error in environments where pgvector indexing limits apply.
+--
+-- CONTEXT / CURRENT ISSUE
+--   pgvector ANN index types have a hard dimension limit (commonly 2000 dims) for:
+--     - ivfflat
+--     - hnsw
+--
+--   If your embedding column is vector(3072) (e.g. OpenAI text-embedding-3-large),
+--   Postgres will error when you attempt to create ivfflat/hnsw indexes.
+--
+--   Therefore, we keep this file fully commented and provide drop-in code blocks
+--   for each option. Choose ONE option and implement it as a *new executable migration*
+--   (e.g. 0004_enable_embedding_indexes.sql) when you commit to that approach.
+--
+-- RECOMMENDED PRACTICE
+--   - Keep migrations deterministic. Do NOT "try/except ignore failures" in SQL.
+--   - Pick a strategy and make it executable in a new migration when ready.
+--   - Record the chosen strategy in README / ops docs.
+--
+-- TABLES ASSUMED (singular naming)
+--   claim
+--   claim_embedding
+--     - claim_embedding.embedding is a pgvector column
+--     - claim_embedding.embedding_model is text
+--
+-- =====================================================================
+-- OPTION A (MVP / RUNS TODAY): Use <= 2000-dimension embeddings
+-- =====================================================================
+--
+-- Summary:
+--   Switch to an embedding model whose dimensionality <= 2000.
+--   Common example: OpenAI "text-embedding-3-small" => 1536 dims.
+--
+-- Requirements:
+--   1) Update your service config to produce <= 2000-dim vectors.
+--   2) Ensure the schema column dimension matches the model dimension.
+--      - If currently vector(3072), you must migrate to vector(1536).
+--   3) Backfill embeddings.
+--   4) Create ANN index (ivfflat or hnsw).
+--
+-- Notes:
+--   - If you already created claim_embedding as vector(3072),
+--     changing to vector(1536) requires a schema migration + backfill.
+--
+-- ---------------------------------------------------------------------
+-- A1) Schema change to 1536 dims (example)
+-- ---------------------------------------------------------------------
+--
+-- BEGIN;
+--
+-- -- If you used vector(3072) initially, you can't "ALTER TYPE" directly.
+-- -- You typically do: add new column, backfill, swap, drop old.
+-- --
+-- -- Add a new column for the new dimensionality
+-- ALTER TABLE claim_embedding
+--   ADD COLUMN embedding_1536 vector(1536);
+--
+-- -- Backfill is done by your service (recommended) rather than in SQL.
+-- -- If you had vectors stored elsewhere, you'd update them here.
+-- -- Example placeholder:
+-- -- UPDATE claim_embedding SET embedding_1536 = <computed 1536-dim vector>;
+--
+-- -- Swap columns (requires ensuring embedding_1536 is fully populated)
+-- -- 1) Drop old index (if any)
+-- -- 2) Drop old column
+-- -- 3) Rename new column to embedding
+-- ALTER TABLE claim_embedding
+--   DROP COLUMN embedding;
+-- ALTER TABLE claim_embedding
+--   RENAME COLUMN embedding_1536 TO embedding;
+--
+-- COMMIT;
+--
+-- ---------------------------------------------------------------------
+-- A2) Create ivfflat index (cosine) for <= 2000 dims
+-- ---------------------------------------------------------------------
+--
+-- -- IMPORTANT:
+-- --   ivfflat requires setting ivfflat.probes at query time for recall tuning.
+-- --   Also requires ANALYZE after data load for best results.
+-- --
+-- CREATE INDEX IF NOT EXISTS claim_embedding_ivfflat
+--   ON claim_embedding
+--   USING ivfflat (embedding vector_cosine_ops)
+--   WITH (lists = 100);
+--
+-- -- Optional: set probes per session (example)
+-- -- SET ivfflat.probes = 10;
+--
+-- ---------------------------------------------------------------------
+-- A3) Create hnsw index (cosine) for <= 2000 dims
+-- ---------------------------------------------------------------------
+--
+-- -- hnsw often gives better recall/latency tradeoffs than ivfflat,
+-- -- but memory usage can be higher.
+-- --
+-- CREATE INDEX IF NOT EXISTS claim_embedding_hnsw
+--   ON claim_embedding
+--   USING hnsw (embedding vector_cosine_ops)
+--   WITH (m = 16, ef_construction = 200);
+--
+-- =====================================================================
+-- OPTION B (WORKS TODAY): No ANN index; use brute-force search temporarily
+-- =====================================================================
+--
+-- Summary:
+--   Keep embedding dims as-is (even 3072), do NOT create ANN indexes,
+--   and use exact / brute-force similarity search for MVP / low volume.
+--
+-- Requirements:
+--   - No schema changes required.
+--   - Queries will scan claim_embedding; acceptable only at small scale.
+--
+-- Pros:
+--   - Avoids forcing a smaller model or external DB now.
+--   - Keeps “best quality embeddings” option open.
+--
+-- Cons:
+--   - Slow at scale.
+--   - Not viable for large datasets without further changes.
+--
+-- Example query patterns:
+--
+-- -- For cosine distance, pgvector uses `<=>` for cosine distance when using
+-- -- vector_cosine_ops semantics. If you store raw embeddings, you can still do:
+-- --
+-- -- Find nearest neighbors (small dataset)
+-- -- SELECT ce.claim_id,
+-- --        1 - (ce.embedding <=> :query_embedding) AS cosine_similarity
+-- -- FROM claim_embedding ce
+-- -- ORDER BY ce.embedding <=> :query_embedding
+-- -- LIMIT 20;
+--
+-- =====================================================================
+-- OPTION C (RECOMMENDED LONG-TERM): External vector DB (Qdrant/Weaviate/etc.)
+-- =====================================================================
+--
+-- Summary:
+--   Postgres remains the source of truth for claims and metadata, but embeddings
+--   and ANN search move to a dedicated vector database.
+--
+-- Postgres changes:
+--   - You may keep embeddings in Postgres for auditing, or you may store only
+--     embedding_model + updated_tms and keep vectors external.
+--   - No Postgres ANN index needed.
+--
+-- Recommended Postgres pattern:
+--
+-- -- Optional: if you want to stop storing the vector in Postgres:
+-- -- ALTER TABLE claim_embedding DROP COLUMN embedding;
+-- -- (and keep embedding_model + timestamps)
+--
+-- Application pattern:
+--   - Upsert embedding into Qdrant keyed by claim_id
+--   - Query Qdrant for topK neighbors
+--   - Join claim_id results back to Postgres for claim metadata
+--
+-- =====================================================================
+-- OPTION D (FUTURE / WHEN SUPPORTED): ANN index for > 2000 dims
+-- =====================================================================
+--
+-- Summary:
+--   If pgvector (and/or Postgres extension constraints) later support ANN indexes
+--   for > 2000 dims, you can keep vector(3072) and create ivfflat/hnsw.
+--
+-- This OPTION IS NOT EXECUTABLE TODAY in your environment due to the error:
+--   "column cannot have more than 2000 dimensions for ivfflat/hnsw index"
+--
+-- Drop-in code (future only):
+--
+-- -- ivfflat (future only; currently fails at 3072 dims)
+-- -- CREATE INDEX IF NOT EXISTS claim_embedding_ivfflat
+-- --   ON claim_embedding
+-- --   USING ivfflat (embedding vector_cosine_ops)
+-- --   WITH (lists = 100);
+--
+-- -- hnsw (future only; currently fails at 3072 dims)
+-- -- CREATE INDEX IF NOT EXISTS claim_embedding_hnsw
+-- --   ON claim_embedding
+-- --   USING hnsw (embedding vector_cosine_ops)
+-- --   WITH (m = 16, ef_construction = 200);
+--
+-- =====================================================================
+-- IMPLEMENTATION NOTE
+-- =====================================================================
+--
+-- When you choose a direction:
+--   - Do NOT uncomment this file.
+--   - Create a NEW migration (e.g. 0004_enable_embedding_indexes.sql)
+--     containing only the executable SQL for the chosen option.
+--   - Keep this file as historical documentation and rationale.
+--
+
